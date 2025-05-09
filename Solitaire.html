@@ -1,0 +1,1437 @@
+<html>
+<body>
+<div id="divMain"></div>
+<script type="text/javascript">
+ 
+// main
+ 
+function main()
+{
+    var universe = new Universe
+    (
+        GameDefn.solitaire()
+    );
+ 
+    Globals.Instance.initialize
+    (
+        new Coords(300, 300), //viewSizeInPixels,
+        universe
+    )
+}
+ 
+// extensions
+ 
+function ArrayExtensions()
+{
+    // do nothing
+}
+{
+    Array.prototype.addLookups = function(keyName)
+    {
+        for (var i = 0; i < this.length; i++)
+        {
+            var item = this[i];
+            var keyValue = item[keyName];
+            this[keyValue] = item;
+        }
+ 
+        return this;
+    }
+ 
+    Array.prototype.append = function(other)
+    {
+        for (var i = 0; i < other.length; i++)
+        {
+            var item = other[i];
+            this.push(item);
+        }
+ 
+        return this;
+    }
+}
+ 
+// classes
+ 
+function Action(name, keyCode, performForSession)
+{
+    this.name = name;
+    this.keyCode = keyCode;
+    this.performForSession = performForSession;
+}
+ 
+function Card(defnName, isFaceUp)
+{
+    this.defnName = defnName;
+    this.isFaceUp = isFaceUp;
+}
+{
+    Card.prototype.defn = function()
+    {
+        var universe = Globals.Instance.universe;
+        var cardDefns = universe.gameDefn.cardDefnSet.cardDefns;
+        return cardDefns[this.defnName];
+    }
+ 
+    Card.prototype.size = function()
+    {
+        return this.defn().size();
+    }
+}
+ 
+function CardDefn(name, color)
+{
+    this.name = name;
+    this.color = color;
+}
+{
+    CardDefn.prototype.cardDefnSet = function()
+    {
+        return Globals.Instance.universe.gameDefn.cardDefnSet;
+    }
+ 
+    CardDefn.prototype.size = function()
+    {
+        return this.cardDefnSet().cardSizeInPixels;
+    }
+}
+ 
+function CardDefnSet(name, cardSizeInPixels, cardDefns)
+{
+    this.name = name;
+    this.cardSizeInPixels = cardSizeInPixels;
+    this.cardDefns = cardDefns;
+    this.cardDefns.addLookups("name");
+}
+{
+    CardDefnSet.standard = function()
+    {
+        var cardDefns = [];
+ 
+        var suitCodes = [ "\u2663", "\u2666", "\u2665", "\u2660" ];
+        var suitColors = [ "Black", "Red", "Red", "Black" ];
+ 
+        var ranks = Rank.Instances._All;
+        var ranksPerSuit = ranks.length;
+ 
+        for (var s = 0; s < suitCodes.length; s++)
+        {
+            var suitCode = suitCodes[s];
+            var suitColor = suitColors[s];
+         
+            for (var r = 0; r < ranksPerSuit; r++)
+            {
+                var rank = ranks[r];
+                var cardDefnName = suitCode + rank.code;
+                 
+                var cardDefn = new CardDefn
+                (
+                    cardDefnName,
+                    suitColor
+                );
+                cardDefns.push(cardDefn);   
+            }
+        }
+ 
+        var returnValue = new CardDefnSet
+        (
+            "Standard",
+            new Coords(24, 36), // cardSizeInPixels
+            cardDefns
+        );
+ 
+        return returnValue;
+    }
+}
+ 
+function CardStack(name, defnName, pos, cards)
+{
+    this.name = name;
+    this.defnName = defnName;
+    this.pos = pos;
+    this.cards = cards;
+}
+{
+    // static methods
+ 
+    CardStack.fromCardDefns = function(name, defnName, pos, cardDefns)
+    {
+        var cards = [];
+ 
+        for (var i = 0; i < cardDefns.length; i++)
+        {
+            var cardDefn = cardDefns[i];
+            var card = new Card(cardDefn.name, false);
+            cards.push(card);
+        }
+ 
+        var returnValue = new CardStack
+        (
+            name,
+            defnName,
+            pos,
+            cards
+        );
+ 
+        return returnValue;
+    }
+ 
+    // instance methods
+ 
+    CardStack.prototype.add = function(other)
+    {
+        this.cards.append(other.cards);
+    }
+ 
+    CardStack.prototype.defn = function()
+    {
+        return Globals.Instance.universe.gameDefn.cardStackDefns[this.defnName];
+    }
+ 
+    CardStack.prototype.drawCards = function(numberOfCardsToDraw, isFaceUp)
+    {
+        var returnValues = [];
+ 
+        for (var i = 0; i < numberOfCardsToDraw; i++)
+        {
+            var cardIndex = this.cards.length - 1;
+            var card = this.cards[cardIndex];
+            card.isFaceUp = isFaceUp;
+            this.cards.splice(cardIndex, 1);
+            returnValues.splice(0, 0, card);
+        }
+ 
+        return returnValues;
+    }
+ 
+    CardStack.prototype.drawCardsFaceDown = function(numberOfCardsToDraw)
+    {
+        return this.drawCards(numberOfCardsToDraw, false);
+    }
+ 
+    CardStack.prototype.drawCardsFaceUp = function(numberOfCardsToDraw)
+    {
+        return this.drawCards(numberOfCardsToDraw, true);
+    }
+ 
+    CardStack.prototype.drawCardsAsCardStack = function(numberOfCardsToDraw)
+    {
+        var cardsDrawn = this.drawCardsFaceUp(numberOfCardsToDraw);
+ 
+        var returnValue = new CardStack
+        (
+            this.name + "_Draw" + numberOfCardsToDraw,
+            this.defnName,
+            new Coords(0, 0), // pos, 
+            cardsDrawn
+        );
+ 
+        return returnValue;
+    }
+ 
+    CardStack.prototype.flip = function()
+    {
+        for (var i = 0; i < this.cards.length; i++)
+        {
+            var card = this.cards[i];
+            card.isFaceUp = (card.isFaceUp == false);
+        }
+ 
+        return this;
+    }
+ 
+    CardStack.prototype.reverse = function()
+    {
+        var numberOfCards = this.cards.length;
+ 
+        for (var i = numberOfCards - 1; i >= 0; i--)
+        {
+            var card = this.cards[i];
+            this.cards.push(card);
+        }
+ 
+        this.cards.splice(0, numberOfCards);
+ 
+        return this;
+    }
+ 
+    CardStack.prototype.showTopCard = function()
+    {
+        if (this.cards.length > 0)
+        {
+            this.cards[this.cards.length - 1].isFaceUp = true;
+        }
+    }
+ 
+    CardStack.prototype.size = function()
+    {
+        var numberOfCards = this.cards.length;
+        var numberOfCardsMinusOne = numberOfCards - 1;
+        if (numberOfCardsMinusOne < 0)
+        {
+            numberOfCardsMinusOne = 0;
+        }
+ 
+        var returnValue = this.defn().spacing.clone().multiplyScalar
+        (
+            numberOfCardsMinusOne
+        ).add
+        (
+            this.defn().cardDefnSet().cardSizeInPixels
+        );
+ 
+        return returnValue;
+    }
+ 
+    CardStack.prototype.shuffle = function()
+    {
+        var cardsToShuffle = this.cards;
+        var cardsShuffled = [];
+ 
+        while (cardsToShuffle.length > 0)
+        {
+            var cardIndexRandom = Math.floor
+            (
+                Math.random() * cardsToShuffle.length
+            );
+            var cardRandom = cardsToShuffle[cardIndexRandom];
+            cardsToShuffle.splice(cardIndexRandom, 1);
+            cardsShuffled.push(cardRandom);
+        }
+ 
+        this.cards = cardsShuffled;
+ 
+        return this;
+    }
+ 
+    CardStack.prototype.topCard = function()
+    {
+        var returnValue = null;
+ 
+        if (this.cards.length > 0)
+        {
+            returnValue = this.cards[this.cards.length - 1];
+        }
+ 
+        return returnValue;
+    }
+ 
+    CardStack.prototype.topCardsAsCardStack = function(numberOfCardsToTake)
+    {
+        var numberOfCardsTotal = this.cards.length;
+        var numberOfCardsToLeave = numberOfCardsTotal - numberOfCardsToTake;
+        var spacingMultiplier = numberOfCardsToLeave;
+        if (numberOfCardsToTake == 0 && numberOfCardsTotal > 0)
+        {
+            spacingMultiplier--;
+        }
+        else
+        {
+            // do nothing
+        }
+ 
+        var topCards = this.cards.slice(numberOfCardsToLeave);
+ 
+        var returnValue = new CardStack
+        (
+            this.name + "_Top" + numberOfCardsToTake, 
+            this.defnName, 
+            this.pos.clone().add
+            (
+                this.defn().spacing.clone().multiplyScalar
+                (
+                    spacingMultiplier
+                )
+            ), 
+            topCards
+        );
+ 
+        return returnValue;
+    }
+}
+ 
+function CardStackDefn
+(
+    name, 
+    cardsSelectableMax, 
+    areFaceDownCardsSelectable, 
+    showTopCardAfterMove,
+    spacing, 
+    dropCardStackFromCursorOnto
+)
+{
+    this.name = name;
+    this.cardsSelectableMax = cardsSelectableMax;
+    this.areFaceDownCardsSelectable = areFaceDownCardsSelectable;
+    this.showTopCardAfterMove = showTopCardAfterMove;
+    this.spacing = spacing;
+    this.dropCardStackFromCursorOnto = dropCardStackFromCursorOnto;
+}
+{
+    CardStackDefn.prototype.cardDefnSet = function()
+    {
+        return Globals.Instance.universe.gameDefn.cardDefnSet;
+    }
+}
+ 
+function Coords(x, y)
+{
+    this.x = x;
+    this.y = y;
+}
+{
+    Coords.prototype.add = function(other)
+    {
+        this.x += other.x;
+        this.y += other.y;
+        return this;
+    }
+ 
+    Coords.prototype.clone = function()
+    {
+        return new Coords(this.x, this.y);
+    }
+ 
+    Coords.prototype.divideScalar = function(scalar)
+    {
+        this.x /= scalar;
+        this.y /= scalar;
+        return this;
+    }
+ 
+    Coords.prototype.dotProduct = function(other)
+    {
+        return (this.x * other.x + this.y * other.y);
+    }
+ 
+    Coords.prototype.magnitude = function()
+    {
+        return Math.sqrt(this.x * this.x + this.y * this.y);
+    }
+ 
+    Coords.prototype.multiplyScalar = function(scalar)
+    {
+        this.x *= scalar;
+        this.y *= scalar;
+        return this;
+    }
+ 
+    Coords.prototype.overwriteWith = function(other)
+    {
+        this.x = other.x;
+        this.y = other.y;
+        return this;
+    }
+ 
+    Coords.prototype.overwriteWithXY = function(x, y)
+    {
+        this.x = x;
+        this.y = y;
+        return this;
+    }
+ 
+    Coords.prototype.subtract = function(other)
+    {
+        this.x -= other.x;
+        this.y -= other.y;
+        return this;
+    }
+ 
+}
+ 
+function Cursor()
+{
+    this.cardStackIndexSelected = 0;
+    this.numberOfCardsSelected = 0;
+    this.cardStackBeingMoved = null;
+    this.cardStackBeingMovedFrom = null;
+}
+{
+    Cursor.prototype.cardStackSelectNextInDirection = function(layout, directionSpecified)
+    {
+        var stackCurrent = this.cardStackSelected();
+        var indexOfBestStackSoFar = null;
+        var displacementToStackOther = new Coords();
+        var directionToStackOther = new Coords();
+        var qualityScoreLeastSoFar = Number.POSITIVE_INFINITY; // Less is better.
+ 
+        var stacks = layout.cardStacks;
+        for (var i = 0; i < stacks.length; i++)
+        {
+            var stackOther = stacks[i];
+            if (stackOther != stackCurrent)
+            {
+                displacementToStackOther.overwriteWith
+                (
+                    stackOther.pos
+                ).subtract
+                (
+                    stackCurrent.pos
+                );
+ 
+                var distanceToStackOther = displacementToStackOther.magnitude();
+ 
+                directionToStackOther.overwriteWith
+                (
+                    displacementToStackOther
+                ).divideScalar
+                (
+                    distanceToStackOther
+                );
+ 
+                var dotProduct = directionToStackOther.dotProduct
+                (
+                    directionSpecified
+                );
+ 
+                if (dotProduct > 0)
+                {
+                    var dotProductReversed = 1 - dotProduct;
+                    if (dotProductReversed == 0)
+                    {
+                        dotProductReversed = .001;
+                    }
+                    var qualityScore = distanceToStackOther * dotProductReversed;
+                    if (qualityScore < qualityScoreLeastSoFar)
+                    {
+                        qualityScoreLeastSoFar = qualityScore;
+                        indexOfBestStackSoFar = i;
+                    }   
+                }
+            }   
+        }
+ 
+        if (indexOfBestStackSoFar != null)
+        {
+            this.cardStackIndexSelected = indexOfBestStackSoFar;
+            this.numberOfCardsSelected = 0;         
+        }
+    }
+ 
+    Cursor.prototype.cardStackSelected = function()
+    {
+        var returnValue = null;
+ 
+        if (this.cardStackIndexSelected != null)
+        {
+            var universe = Globals.Instance.universe;
+            var cardStacks = universe.session.layout.cardStacks;
+            returnValue = cardStacks[this.cardStackIndexSelected];
+        }
+ 
+        return returnValue;
+    }
+ 
+    Cursor.prototype.cardStackSelectedTakeOrDrop = function()
+    {
+        var cardStackSelected = this.cardStackSelected();
+        if (cardStackSelected != null)
+        {
+            if (this.cardStackBeingMoved == null)
+            {
+                if (cardStackSelected.cards.length == 0)
+                {   
+                    // hack - False drop.
+ 
+                    var defn = cardStackSelected.defn();
+                    defn.dropCardStackFromCursorOnto(this, cardStackSelected);
+                }
+                else if (this.numberOfCardsSelected > 0)
+                {
+                    // take
+ 
+                    this.cardStackBeingMovedFrom = cardStackSelected;
+                    this.cardStackBeingMoved = cardStackSelected.drawCardsAsCardStack
+                    (
+                        this.numberOfCardsSelected      
+                    );
+                    this.numberOfCardsSelected = 0;
+                }
+            }
+            else
+            {
+                // drop
+ 
+                var defn = cardStackSelected.defn();
+                defn.dropCardStackFromCursorOnto(this, cardStackSelected);
+            }
+        }
+    }
+ 
+    Cursor.prototype.dropCardStackBeingMovedOntoOther = function(cardStackSelected)
+    {
+        cardStackSelected.add(this.cardStackBeingMoved);
+        this.cardStackBeingMoved = null;
+        this.numberOfCardsSelected = 0;
+ 
+        if (this.cardStackBeingMovedFrom.defn().showTopCardAfterMove == true)
+        {
+            this.cardStackBeingMovedFrom.showTopCard();
+        }
+        this.cardStackBeingMovedFrom = null;
+    }
+ 
+    Cursor.prototype.cardStackSelectedDeselect = function()
+    {
+        if (this.cardStackBeingMoved != null)
+        {
+            this.cardStackBeingMovedFrom.add(this.cardStackBeingMoved);
+            this.cardStackBeingMoved = null;
+            this.cardStackBeingMovedFrom = null;
+            this.numberOfCardsSelected = 0;
+        }
+    }
+ 
+    Cursor.prototype.cardStackSelectionCountAdd = function(offset)
+    {
+        if
+        (
+            this.cardStackIndexSelected != null
+            && this.cardStackBeingMoved == null
+        )
+        {
+            var cardStackSelected = this.cardStackSelected();
+            var numberOfCardsInStack = cardStackSelected.cards.length;
+            var numberOfCardsSelectedNext = this.numberOfCardsSelected + offset;
+            if
+            (
+                numberOfCardsSelectedNext >= 0
+                && numberOfCardsSelectedNext <= numberOfCardsInStack
+            )
+            {
+                this.numberOfCardsSelected += offset;
+            }
+ 
+            var cardStackSelectedDefn = cardStackSelected.defn();
+            var cardsSelectableMax = cardStackSelectedDefn.cardsSelectableMax;
+            if
+            (
+                cardsSelectableMax != null
+                && this.numberOfCardsSelected > cardsSelectableMax
+            )
+            {
+                this.numberOfCardsSelected = cardsSelectableMax;
+            }
+ 
+            if (cardStackSelectedDefn.areFaceDownCardsSelectable == false)
+            {
+                while (this.numberOfCardsSelected > 0)
+                {
+                    var indexOfFirstCardToSelect = numberOfCardsInStack - this.numberOfCardsSelected;
+                    var cardToSelect = cardStackSelected.cards[indexOfFirstCardToSelect];
+                    if (cardToSelect.isFaceUp == true)
+                    {
+                        break;
+                    }
+                    this.numberOfCardsSelected--;
+                }
+            }
+        }
+    }
+}
+ 
+function DisplayHelper()
+{
+    // do nothing   
+}
+{
+    DisplayHelper.prototype.clear = function()
+    {
+        this.graphics.fillStyle = "White";
+        this.graphics.fillRect
+        (
+            0, 0,
+            this.viewSizeInPixels.x,
+            this.viewSizeInPixels.y
+        );
+ 
+        this.graphics.strokeStyle = "LightGray";
+        this.graphics.strokeRect
+        (
+            0, 0,
+            this.viewSizeInPixels.x,
+            this.viewSizeInPixels.y
+        );
+    }
+ 
+    DisplayHelper.prototype.drawCardAtPos = function(card, pos)
+    {
+        var cardDefn = card.defn();
+        var cardSizeInPixels = card.size();
+        var isFaceUp = card.isFaceUp;
+     
+        if (isFaceUp == true)
+        {   
+            this.graphics.fillStyle = "White";
+        }
+        else
+        {
+            this.graphics.fillStyle = "Gray";
+        }
+ 
+        this.graphics.fillRect
+        (
+            pos.x, pos.y,
+            cardSizeInPixels.x, cardSizeInPixels.y  
+        );
+         
+        this.graphics.strokeStyle = "LightGray";
+        this.graphics.strokeRect
+        (
+            pos.x, pos.y,
+            cardSizeInPixels.x, cardSizeInPixels.y          
+        );
+ 
+        if (isFaceUp == true)
+        {
+            this.graphics.fillStyle = cardDefn.color;
+            this.graphics.fillText(cardDefn.name, pos.x, pos.y + 10);
+        }
+    }
+ 
+    DisplayHelper.prototype.drawCardStack = function(cardStack)
+    {
+        var drawPos = cardStack.pos.clone();
+ 
+        var cardStackDefn = cardStack.defn();
+        var cards = cardStack.cards;
+ 
+        var cardDefnSet = Globals.Instance.universe.gameDefn.cardDefnSet;
+        var cardSizeInPixels = cardDefnSet.cardSizeInPixels;
+ 
+        this.graphics.strokeStyle = "LightGray";
+        this.graphics.strokeRect
+        (
+            drawPos.x, drawPos.y,
+            cardSizeInPixels.x, cardSizeInPixels.y
+        );
+ 
+        this.graphics.beginPath();
+        this.graphics.moveTo(drawPos.x, drawPos.y);
+        this.graphics.lineTo
+        (
+            drawPos.x + cardSizeInPixels.x,
+            drawPos.y + cardSizeInPixels.y
+        );
+        this.graphics.stroke();
+ 
+        for (var i = 0; i < cards.length; i++)
+        {
+            var card = cards[i];
+ 
+            this.drawCardAtPos(card, drawPos);
+ 
+            drawPos.add(cardStackDefn.spacing);
+        }
+    }
+ 
+    DisplayHelper.prototype.drawCursor = function(cursor)
+    {   
+        if (cursor.cardStackSelected() != null)
+        {
+            if (cursor.cardStackBeingMoved == null)
+            {
+                var numberOfCardsSelected = cursor.numberOfCardsSelected;
+ 
+                var cardStackToHighlight = cursor.cardStackSelected().topCardsAsCardStack
+                (
+                    numberOfCardsSelected
+                );
+                this.drawHighlightForCardStack(cardStackToHighlight);
+            }
+            else
+            {
+                this.drawCursor_2(cursor);
+            }
+        }
+    }
+ 
+    DisplayHelper.prototype.drawHighlightForCardStack = function(cardStackToHighlight)
+    {
+        var highlightPos = cardStackToHighlight.pos.clone();
+        var highlightSize = cardStackToHighlight.size();
+        var numberOfCardsToHighlight = cardStackToHighlight.cards.length;
+ 
+        if (numberOfCardsToHighlight == 0)
+        {
+            this.graphics.strokeStyle = "DarkGray";
+        }
+        else
+        {
+            this.graphics.strokeStyle = "Black";
+            this.graphics.fillStyle = "Black";
+            this.graphics.fillText
+            (
+                numberOfCardsToHighlight,
+                highlightPos.x,
+                highlightPos.y + highlightSize.y
+            );
+        }
+ 
+        this.graphics.strokeRect
+        (
+            highlightPos.x, highlightPos.y,
+            highlightSize.x, highlightSize.y
+        );
+    }
+ 
+    DisplayHelper.prototype.drawCursor_2 = function(cursor)
+    {
+        var cardStackSelected = cursor.cardStackSelected();
+        var cardStackSelectedPos = cardStackSelected.pos;
+        var cardStackSelectedSpacing = cardStackSelected.defn().spacing.clone();
+        var cardStackBeingMoved = cursor.cardStackBeingMoved;
+ 
+        var cardSizeInPixels = cardStackSelected.defn().cardDefnSet().cardSizeInPixels;
+        var offset = cardSizeInPixels.clone().multiplyScalar(.25);
+         
+        cardStackBeingMoved.pos = cardStackSelectedPos.clone().add
+        (
+            cardStackSelectedSpacing.multiplyScalar
+            (
+                cardStackSelected.cards.length
+            )
+        ).add
+        (
+            offset
+        )
+ 
+        this.drawCardStack(cardStackBeingMoved);
+    }
+ 
+    DisplayHelper.prototype.drawLayout = function(layout)
+    {
+        var cardStacks = layout.cardStacks;
+ 
+        for (var i = 0; i < cardStacks.length; i++)
+        {
+            var cardStack = cardStacks[i];
+            this.drawCardStack(cardStack);
+        }
+    }
+ 
+    DisplayHelper.prototype.drawSession = function(session)
+    {
+        this.clear();
+        this.drawLayout(session.layout);
+        this.drawCursor(session.cursor);
+    }
+ 
+    DisplayHelper.prototype.initialize = function(viewSizeInPixels)
+    {
+        this.viewSizeInPixels = viewSizeInPixels;
+ 
+        var canvas = document.createElement("canvas");
+        canvas.width = this.viewSizeInPixels.x;
+        canvas.height = this.viewSizeInPixels.y;
+ 
+        var divMain = document.getElementById("divMain");
+        divMain.appendChild(canvas);
+         
+        this.graphics = canvas.getContext("2d");
+    }
+}
+ 
+function GameDefn(name, cardDefnSet, cardStackDefns, actions, layoutBuild)
+{
+    this.name = name;
+    this.cardDefnSet = cardDefnSet;
+    this.cardStackDefns = cardStackDefns;
+    this.actions = actions;
+    this.layoutBuild = layoutBuild;
+ 
+    this.cardStackDefns.addLookups("name");
+    this.actions.addLookups("keyCode");
+}
+{
+    GameDefn.solitaire = function()
+    {
+        var cardDefnSetStandard = CardDefnSet.standard();
+ 
+        var cardSizeInPixels = cardDefnSetStandard.cardSizeInPixels;
+ 
+        var cardStackDefns = 
+        [
+            new CardStackDefn
+            (
+                "Foundation",
+                0, // cardsSelectableMax
+                false, // areFaceDownCardsSelectable
+                true, // showTopCardAfterMove
+                new Coords(0, -.4), // spacingBetweenCards
+                // dropCardStackFromCursorOnto
+                function(cursor, cardStackAccepting) 
+                { 
+                    var canDrop = false;
+ 
+                    var cardStackToAccept = cursor.cardStackBeingMoved;
+                    var cardToAccept = cardStackToAccept.cards[0];
+                    var cardToAcceptDefn = cardToAccept.defn();
+ 
+                    var ranks = Rank.Instances._All;
+                    var rankCodeOfCardToAccept = cardToAcceptDefn.name.substr(1);
+                    var rankValueOfCardToAccept = ranks[rankCodeOfCardToAccept].value;
+                     
+                    if (cardStackToAccept.cards.length > 1)
+                    {
+                        // canDrop = false;
+                    }
+                    else if (cardStackAccepting.cards.length == 0)
+                    {
+                        if (rankValueOfCardToAccept == 0)
+                        {
+                            canDrop = true;     
+                        }
+                    }
+                    else
+                    {
+                        var cardToAcceptSuitCode = cardToAcceptDefn.name.substr(0, 1);
+                     
+                        var cardAccepting = cardStackAccepting.topCard();
+                        var cardAcceptingDefn = cardAccepting.defn();
+                        var cardAcceptingSuitCode = cardAcceptingDefn.name.substr(0, 1);
+ 
+                        var doSuitsMatch = (cardToAcceptSuitCode == cardAcceptingSuitCode); 
+ 
+                        var rankCodeOfCardAccepting = cardAcceptingDefn.name.substr(1);
+                        var rankValueOfCardAccepting = ranks[rankCodeOfCardAccepting].value;
+ 
+                        var rankOfCardAcceptingMinusAccepted = 
+                            rankValueOfCardAccepting
+                            - rankValueOfCardToAccept;
+ 
+                        var isRankOfCardAcceptingOneLessThanAccepted = 
+                            (rankOfCardAcceptingMinusAccepted == -1);
+     
+                        canDrop = 
+                        (
+                            doSuitsMatch
+                            && isRankOfCardAcceptingOneLessThanAccepted
+                        );
+                    }
+ 
+                    if (canDrop == true)
+                    {
+                        cursor.dropCardStackBeingMovedOntoOther
+                        (
+                            cardStackAccepting
+                        );
+ 
+ 
+                        var cardStacks = Globals.Instance.universe.session.layout.cardStacks;
+                        var numberOfFoundations = 4;
+ 
+                        var areAllFoundationsFullSoFar = true;
+ 
+                        for (var i = 0; i < numberOfFoundations; i++)
+                        {                       
+                            var foundationName = "Foundation" + i;
+                            var foundation = cardStacks[foundationName];
+                            if (foundation.cards.length < Rank.Instances._All.length)
+                            {
+                                areAllFoundationsFullSoFar = false;
+                                break;
+                            }
+                        }
+ 
+                        if (areAllFoundationsFullSoFar == true)
+                        {
+                            alert("You win!");
+                        }
+                    }
+                }
+            ),
+ 
+            new CardStackDefn
+            (
+                "Stock",
+                1, // cardsSelectableMax
+                true, // areFaceDownCardsSelectable
+                false, // showTopCardAfterMove
+                // spacingBetweenCards
+                new Coords(0, -.4),
+                // dropCardStackFromCursorOnto
+                function(cursor, cardStackAccepting) 
+                { 
+                    if (cardStackAccepting.cards.length == 0)
+                    {
+                        var universe = Globals.Instance.universe;
+                        var layout = universe.session.layout;
+                        var cardStackWaste = layout.cardStacks["Waste"];
+                        cardStackWaste.flip().reverse();
+                        cardStackAccepting.add(cardStackWaste);
+                        cardStackWaste.cards.length = 0;
+                    }
+                }
+            ),
+ 
+            new CardStackDefn
+            (
+                "Tableau",
+                null, // cardsSelectableMax
+                false, // areFaceDownCardsSelectable
+                true, // showTopCardAfterMove
+                // spacingBetweenCards
+                new Coords(0, cardSizeInPixels.y / 3),
+                // dropCardStackFromCursorOnto
+                function(cursor, cardStackAccepting) 
+                { 
+                    var canDrop = false;
+ 
+                    if (cardStackAccepting.cards.length == 0)
+                    {
+                        canDrop = true;
+                    }
+                    else
+                    {
+                        var cardStackToAccept = cursor.cardStackBeingMoved;
+                        var cardToAccept = cardStackToAccept.cards[0];
+                        var cardToAcceptDefn = cardToAccept.defn();
+                        var cardToAcceptColor = cardToAcceptDefn.color;
+                     
+                        var cardAccepting = cardStackAccepting.topCard();
+                        var cardAcceptingDefn = cardAccepting.defn();
+                        var cardAcceptingColor = cardAcceptingDefn.color;
+ 
+                        var areColorsDifferent = (cardToAcceptColor != cardAcceptingColor);
+ 
+                        var ranks = Rank.Instances._All;
+     
+                        var rankCodeOfCardAccepting = cardAcceptingDefn.name.substr(1);
+                        var rankValueOfCardAccepting = ranks[rankCodeOfCardAccepting].value;
+ 
+                        var rankCodeOfCardToAccept = cardToAcceptDefn.name.substr(1);
+                        var rankValueOfCardToAccept = ranks[rankCodeOfCardToAccept].value;
+ 
+                        var rankOfCardAcceptingMinusAccepted = 
+                            rankValueOfCardAccepting
+                            - rankValueOfCardToAccept;
+ 
+                        var isRankOfCardAcceptingOneGreaterThanAccepted = 
+                            (rankOfCardAcceptingMinusAccepted == 1);
+ 
+                        canDrop = 
+                        (
+                            areColorsDifferent
+                            && isRankOfCardAcceptingOneGreaterThanAccepted
+                        );
+                    }
+                 
+                    if (canDrop == true)
+                    {
+                        cursor.dropCardStackBeingMovedOntoOther
+                        (
+                            cardStackAccepting
+                        );
+                    }
+                }
+            ),
+ 
+            new CardStackDefn
+            (
+                "Waste",
+                1, // cardsSelectableMax
+                false, // areFaceDownCardsSelectable
+                true, // showTopCardAfterMove
+                // spacingBetweenCards
+                new Coords(0, -.4),
+                // dropCardStackFromCursorOnto
+                function(cursor, cardStackAccepting) 
+                { 
+                    // The waste stack can only accept cards from the stock.
+                    var canDrop = (cursor.cardStackBeingMovedFrom.defnName == "Stock");
+                    if (canDrop == true)
+                    {
+                        cursor.dropCardStackBeingMovedOntoOther
+                        (
+                            cardStackAccepting
+                        );
+                    }
+                }
+            ),
+        ];
+ 
+        cardStackDefns.addLookups("name");
+ 
+        var actions = 
+        [
+            new Action
+            (
+                "TakeOrDrop",
+                "_13", // keyCode  
+                // performForSession
+                function(session)
+                {
+                    session.cursor.cardStackSelectedTakeOrDrop();
+                }
+            ),
+            new Action
+            (
+                "Cancel", 
+                "_27", // keyCode
+                // performForSession
+                function(session)
+                {
+                    session.cursor.cardStackSelectedDeselect();
+                }
+            ),
+            new Action
+            (
+                "CountIncrement",
+                "_38", // keyCode
+                // performForSession
+                function(session)
+                {
+                    session.cursor.cardStackSelectionCountAdd(1);
+                }
+            ),
+            new Action
+            (
+                "CountDecrement",
+                "_40", // keyCode
+                // performForSession
+                function(session)
+                {
+                    session.cursor.cardStackSelectionCountAdd(-1);
+                }
+            ),
+            new Action
+            (
+                "MoveLeft",
+                "_65", // keyCode
+                function(session)
+                {
+                    session.cursor.cardStackSelectNextInDirection
+                    (
+                        session.layout, new Coords(-1, 0)
+                    );
+                }
+            ),
+            new Action
+            (
+                "MoveRight",
+                "_68", // keyCode
+                // performForSession
+                function(session)
+                {
+                    session.cursor.cardStackSelectNextInDirection
+                    (
+                        session.layout, new Coords(1, 0)
+                    );
+                }
+            ),
+            new Action
+            (
+                "MoveDown",
+                "_83", // keyCode,
+                // performForSession
+                function (session)
+                {
+                    session.cursor.cardStackSelectNextInDirection
+                    (
+                        session.layout, new Coords(0, 1)
+                    );
+                }
+            ),
+            new Action
+            (
+                "MoveUp", 
+                "_87", // keyCode
+                // performForSession
+                function(session)
+                {
+                    session.cursor.cardStackSelectNextInDirection
+                    (
+                        session.layout, new Coords(0, -1)
+                    );
+                }
+            ),
+        ];
+ 
+        var layoutBuild = function()
+        {
+            var deck = CardStack.fromCardDefns
+            (
+                null, // name
+                null, // defnName
+                null, // pos
+                cardDefnSetStandard.cardDefns
+            ).shuffle();
+ 
+            var cardStacks = [];
+ 
+            var numberOfTableaus = 7;
+            var tableauPos = new Coords
+            (
+                cardSizeInPixels.x,
+                cardSizeInPixels.y * 2
+            );
+            var spacingBetweenTableaus = new Coords
+            (
+                cardSizeInPixels.x * 1.5,
+                0
+            );
+ 
+            for (var t = 0; t < numberOfTableaus; t++)
+            {
+                var cardsInTableau = numberOfTableaus - t;
+ 
+                var cardStackTableau = new CardStack
+                (
+                    "Tableau" + t,
+                    cardStackDefns["Tableau"].name,
+                    tableauPos.clone(),
+                    deck.drawCardsFaceDown(cardsInTableau)
+                );
+ 
+                cardStackTableau.showTopCard();
+ 
+                cardStacks.push(cardStackTableau);
+ 
+                tableauPos.add(spacingBetweenTableaus);
+            }
+ 
+            var numberOfSuits = 4;
+            var numberOfFoundations = numberOfSuits;
+            var foundationPos = new Coords
+            (
+                cardSizeInPixels.x, 
+                cardSizeInPixels.y / 2
+            );
+            var spacingBetweenFoundations = new Coords
+            (
+                cardSizeInPixels.x * 1.5,
+                0
+            );
+ 
+            for (var s = 0; s < numberOfFoundations; s++)
+            {
+                var cardStackFoundation = new CardStack
+                (
+                    "Foundation" + s,
+                    cardStackDefns["Foundation"].name,
+                    foundationPos.clone(),
+                    [] // cards
+                );
+                 
+                cardStacks.push(cardStackFoundation);
+ 
+                foundationPos.add(spacingBetweenFoundations);
+            }
+ 
+            var stockPos = foundationPos.clone().add
+            (
+                spacingBetweenFoundations
+            );
+ 
+            var cardStackStock = new CardStack
+            (
+                "Stock",
+                cardStackDefns["Stock"].name,
+                stockPos,
+                deck.cards
+            );
+ 
+            cardStacks.push(cardStackStock);
+ 
+            var wastePos = stockPos.clone().add
+            (
+                spacingBetweenFoundations
+            );
+ 
+            var cardStackWaste = new CardStack
+            (
+                "Waste",
+                cardStackDefns["Waste"].name,
+                wastePos,
+                [] // cards
+            );
+ 
+            cardStacks.push(cardStackWaste);
+             
+            var layout = new Layout
+            (
+                cardStacks
+            );
+ 
+            return layout;
+        }
+ 
+        var returnValue = new GameDefn
+        (
+            "Solitaire",
+            cardDefnSetStandard,
+            cardStackDefns,
+            actions,
+            layoutBuild
+        );
+ 
+        return returnValue;
+    }
+}
+ 
+function Globals()
+{
+    // do nothing
+}
+{
+    // instance
+ 
+    Globals.Instance = new Globals();
+ 
+    // methods
+ 
+    Globals.prototype.initialize = function(viewSizeInPixels, universe)
+    {
+        this.displayHelper = new DisplayHelper();
+        this.displayHelper.initialize(viewSizeInPixels);
+ 
+        this.universe = universe;
+        this.universe.initialize();
+ 
+        this.inputHelper = new InputHelper();
+        this.inputHelper.initialize();
+ 
+        this.update();
+    }
+ 
+    Globals.prototype.update = function()
+    {
+        this.universe.update();
+    }
+}
+ 
+function InputHelper()
+{
+    // do nothing
+}
+{
+    InputHelper.prototype.clear = function()
+    {
+        this.keyCodePressed = null;
+    }
+ 
+    InputHelper.prototype.initialize = function()
+    {
+        document.body.onkeydown = this.handleEventKeyDown.bind(this);
+    }
+ 
+    // events
+ 
+    InputHelper.prototype.handleEventKeyDown = function(event)
+    {
+        this.keyCodePressed = "_" + event.keyCode;
+ 
+        Globals.Instance.update();
+    }
+}
+ 
+function Layout(cardStacks)
+{
+    this.cardStacks = cardStacks;
+    this.cardStacks.addLookups("name");
+}
+ 
+function NumberHelper()
+{}
+{
+    NumberHelper.wrapNumberToRangeMax = function(numberToWrap, max)
+    {
+        while (numberToWrap < 0)
+        {
+            numberToWrap += max;
+        }
+ 
+        while (numberToWrap >= max)
+        {
+            numberToWrap -= max;
+        }
+ 
+        return numberToWrap;
+    }
+}
+ 
+function Rank(value, code)
+{
+    this.value = value;
+    this.code = code;
+}
+{
+    Rank.Instances = new Rank_Instances();
+ 
+    function Rank_Instances()
+    {
+        this._All = 
+        [
+            new Rank(0, "A "),
+            new Rank(1, "2 "),
+            new Rank(2, "3 "),
+            new Rank(3, "4 "),
+            new Rank(4, "5 "),
+            new Rank(5, "6 "),
+            new Rank(6, "7 "),
+            new Rank(7, "8 "),
+            new Rank(8, "9 "),
+            new Rank(9, "10 "),
+            new Rank(10, "J "),
+            new Rank(11, "Q "),
+            new Rank(12, "K "),
+        ];
+ 
+        this._All.addLookups("code");
+    }
+}
+ 
+function Session(cursor, layout)
+{
+    this.cursor = cursor;
+    this.layout = layout;
+}
+{
+    Session.prototype.update = function()
+    {
+        var inputHelper = Globals.Instance.inputHelper;
+        var keyCodePressed = inputHelper.keyCodePressed;
+        if (keyCodePressed != null)
+        {
+            var actions = Globals.Instance.universe.gameDefn.actions;
+            var actionForKeyPressed = actions[keyCodePressed];
+            if (actionForKeyPressed != null)
+            {
+                actionForKeyPressed.performForSession(this);
+            }
+            inputHelper.clear();
+        }
+ 
+        Globals.Instance.displayHelper.drawSession(this);
+    }
+}
+ 
+function Universe(gameDefn)
+{
+    this.gameDefn = gameDefn;
+}
+{
+    Universe.prototype.initialize = function()
+    {
+        var layout = this.gameDefn.layoutBuild();
+ 
+        this.session = new Session
+        (
+            new Cursor(),
+            layout
+        );
+    }
+ 
+    Universe.prototype.update = function()
+    {
+        this.session.update();
+    }
+}
+ 
+// run
+ 
+main();
+ 
+</script>
+</body>
+</html>
